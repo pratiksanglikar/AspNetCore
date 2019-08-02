@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Components.Rendering;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Rendering;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,6 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 {
     internal class CircuitHost : IAsyncDisposable
     {
-        private readonly SemaphoreSlim HandlerLock = new SemaphoreSlim(1);
         private readonly IServiceScope _scope;
         private readonly CircuitHandler[] _circuitHandlers;
         private readonly ILogger _logger;
@@ -250,6 +250,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             Log.CircuitOpened(_logger, Circuit.Id);
 
+            Renderer.Dispatcher.AssertAccess();
+
             for (var i = 0; i < _circuitHandlers.Length; i++)
             {
                 var circuitHandler = _circuitHandlers[i];
@@ -268,26 +270,19 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             Log.ConnectionUp(_logger, Circuit.Id, Client.ConnectionId);
 
-            try
-            {
-                await HandlerLock.WaitAsync(cancellationToken);
+            Renderer.Dispatcher.AssertAccess();
 
-                for (var i = 0; i < _circuitHandlers.Length; i++)
-                {
-                    var circuitHandler = _circuitHandlers[i];
-                    try
-                    {
-                        await circuitHandler.OnConnectionUpAsync(Circuit, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        OnHandlerError(circuitHandler, nameof(CircuitHandler.OnConnectionUpAsync), ex);
-                    }
-                }
-            }
-            finally
+            for (var i = 0; i < _circuitHandlers.Length; i++)
             {
-                HandlerLock.Release();
+                var circuitHandler = _circuitHandlers[i];
+                try
+                {
+                    await circuitHandler.OnConnectionUpAsync(Circuit, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    OnHandlerError(circuitHandler, nameof(CircuitHandler.OnConnectionUpAsync), ex);
+                }
             }
         }
 
@@ -295,26 +290,19 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             Log.ConnectionDown(_logger, Circuit.Id, Client.ConnectionId);
 
-            try
-            {
-                await HandlerLock.WaitAsync(cancellationToken);
+            Renderer.Dispatcher.AssertAccess();
 
-                for (var i = 0; i < _circuitHandlers.Length; i++)
-                {
-                    var circuitHandler = _circuitHandlers[i];
-                    try
-                    {
-                        await circuitHandler.OnConnectionDownAsync(Circuit, cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        OnHandlerError(circuitHandler, nameof(CircuitHandler.OnConnectionDownAsync), ex);
-                    }
-                }
-            }
-            finally
+            for (var i = 0; i < _circuitHandlers.Length; i++)
             {
-                HandlerLock.Release();
+                var circuitHandler = _circuitHandlers[i];
+                try
+                {
+                    await circuitHandler.OnConnectionDownAsync(Circuit, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    OnHandlerError(circuitHandler, nameof(CircuitHandler.OnConnectionDownAsync), ex);
+                }
             }
         }
 
@@ -326,6 +314,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         private async Task OnCircuitDownAsync()
         {
             Log.CircuitClosed(_logger, Circuit.Id);
+
+            Renderer.Dispatcher.AssertAccess();
 
             for (var i = 0; i < _circuitHandlers.Length; i++)
             {
