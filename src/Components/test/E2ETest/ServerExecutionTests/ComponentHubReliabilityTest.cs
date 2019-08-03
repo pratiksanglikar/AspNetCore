@@ -58,7 +58,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Single(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "StartCircuit",
                 baseUri,
                 baseUri + "/home"));
@@ -79,7 +79,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.True(await Client.ConnectAsync(uri, prerendered: false, connectAutomatically: false), "Couldn't connect to the app");
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync("StartCircuit", null, null));
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync("StartCircuit", null, null));
 
             // Assert
             var actualError = Assert.Single(Errors);
@@ -97,7 +97,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.True(await Client.ConnectAsync(uri, prerendered: false, connectAutomatically: false), "Couldn't connect to the app");
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync("StartCircuit", uri.AbsoluteUri, "/foo"));
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync("StartCircuit", uri.AbsoluteUri, "/foo"));
 
             // Assert
             var actualError = Assert.Single(Errors);
@@ -119,7 +119,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             // Act
             //
             // These are valid URIs by the BaseUri doesn't contain the Uri - so it fails to initialize.
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync("StartCircuit", uri, "http://example.com"), TimeSpan.FromHours(1));
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync("StartCircuit", uri, "http://example.com"), TimeSpan.FromHours(1));
 
             // Assert
             var actualError = Assert.Single(Errors);
@@ -138,7 +138,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Empty(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "BeginInvokeDotNetFromJS",
                 "",
                 "",
@@ -164,7 +164,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Empty(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "EndInvokeJSFromDotNet",
                 3,
                 true,
@@ -188,7 +188,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Empty(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "DispatchBrowserEvent",
                 "",
                 ""));
@@ -201,7 +201,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
         }
 
         [Fact]
-        public async Task CannotInvokeOnRenderCompletedInitialization()
+        public async Task CannotInvokeOnRenderCompletedBeforeInitialization()
         {
             // Arrange
             var expectedError = "Circuit not initialized.";
@@ -211,7 +211,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Empty(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "OnRenderCompleted",
                 5,
                 null));
@@ -234,7 +234,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Empty(Batches);
 
             // Act
-            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync(
                 "OnLocationChanged",
                 baseUri.AbsoluteUri,
                 false));

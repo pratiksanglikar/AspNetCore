@@ -7,11 +7,10 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Rendering;
-using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -49,7 +48,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             // We do as much intialization as possible eagerly in this method, which makes the error handling
             // story much simpler. If we throw from here, it's handled inside the initial hub method.
-            var components = ResolveComponentMetadata(httpContext, client);
+            var components = ResolveComponentMetadata(httpContext);
 
             var scope = _scopeFactory.CreateScope();
             var encoder = scope.ServiceProvider.GetRequiredService<HtmlEncoder>();
@@ -103,28 +102,17 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             return circuitHost;
         }
 
-        internal static List<ComponentDescriptor> ResolveComponentMetadata(HttpContext httpContext, CircuitClientProxy client)
+        public static IReadOnlyList<ComponentDescriptor> ResolveComponentMetadata(HttpContext httpContext)
         {
-            if (!client.Connected)
+            var endpoint = httpContext.GetEndpoint();
+            if (endpoint == null)
             {
-                // This is the prerendering case. Descriptors will be registered by the prerenderer.
-                return new List<ComponentDescriptor>();
+                throw new InvalidOperationException(
+                    $"{nameof(ComponentHub)} doesn't have an associated endpoint. " +
+                    "Use 'app.UseEndpoints(endpoints => endpoints.MapBlazorHub<App>(\"app\"))' to register your hub.");
             }
-            else
-            {
-                var endpointFeature = httpContext.Features.Get<IEndpointFeature>();
-                var endpoint = endpointFeature?.Endpoint;
-                if (endpoint == null)
-                {
-                    throw new InvalidOperationException(
-                        $"{nameof(ComponentHub)} doesn't have an associated endpoint. " +
-                        "Use 'app.UseEndpoints(endpoints => endpoints.MapBlazorHub<App>(\"app\"))' to register your hub.");
-                }
 
-                var componentsMetadata = endpoint.Metadata.OfType<ComponentDescriptor>().ToList();
-
-                return componentsMetadata;
-            }
+            return endpoint.Metadata.GetOrderedMetadata<ComponentDescriptor>();
         }
 
         private static class Log

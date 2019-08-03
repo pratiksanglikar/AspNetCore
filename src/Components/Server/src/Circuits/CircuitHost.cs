@@ -54,22 +54,25 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             CircuitHandler[] circuitHandlers,
             ILogger logger)
         {
-            CircuitId = circuitId;
+            CircuitId = circuitId ?? throw new ArgumentNullException(nameof(circuitId));
             _scope = scope ?? throw new ArgumentNullException(nameof(scope));
-            Client = client;
-            Descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
+            Client = client ?? throw new ArgumentNullException(nameof(client));
             Renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+            Descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
             JSRuntime = jsRuntime ?? throw new ArgumentNullException(nameof(jsRuntime));
-            _logger = logger;
+            _circuitHandlers = circuitHandlers ?? throw new ArgumentNullException(nameof(circuitHandlers));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             Services = scope.ServiceProvider;
 
             Circuit = new Circuit(this);
-            _circuitHandlers = circuitHandlers;
+            Handle = new CircuitHandle() { CircuitHost = this, };
 
             Renderer.UnhandledException += Renderer_UnhandledException;
             Renderer.UnhandledSynchronizationException += SynchronizationContext_UnhandledException;
         }
+
+        public CircuitHandle Handle { get; }
 
         public string CircuitId { get; }
 
