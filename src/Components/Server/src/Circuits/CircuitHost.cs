@@ -378,7 +378,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
-        internal void SendPendingBatches()
+        public void SendPendingBatches()
         {
             AssertInitialized();
             AssertNotDisposed();
