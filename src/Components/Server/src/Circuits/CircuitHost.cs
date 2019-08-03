@@ -129,7 +129,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 try
                 {
                     await OnConnectionDownAsync(CancellationToken.None);
-                    await OnCircuitDownAsync();
+                    await OnCircuitDownAsync(CancellationToken.None);
                 }
                 finally
                 {
@@ -211,7 +211,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
-        private async Task OnCircuitDownAsync()
+        private async Task OnCircuitDownAsync(CancellationToken cancellationToken)
         {
             Log.CircuitClosed(_logger, Circuit.Id);
 
@@ -220,7 +220,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 var circuitHandler = _circuitHandlers[i];
                 try
                 {
-                    await circuitHandler.OnCircuitClosedAsync(Circuit, default);
+                    await circuitHandler.OnCircuitClosedAsync(Circuit, cancellationToken);
                 }
                 catch (Exception ex)
                 {
