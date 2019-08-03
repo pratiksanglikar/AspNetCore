@@ -21,6 +21,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         private readonly CircuitHandler[] _circuitHandlers;
         private readonly ILogger _logger;
         private bool _initialized;
+        private bool _disposed;
 
         /// <summary>
         /// Sets the current <see cref="Circuits.Circuit"/>.
@@ -126,6 +127,12 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
             await Renderer.Dispatcher.InvokeAsync(async () =>
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
+
                 try
                 {
                     await OnConnectionDownAsync(CancellationToken.None);
@@ -135,6 +142,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 {
                     Renderer.Dispose();
                     _scope.Dispose();
+
+                    _disposed = true;
                 }
             });
         }
