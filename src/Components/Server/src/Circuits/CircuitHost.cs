@@ -285,13 +285,19 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public async Task DispatchEvent(string eventDescriptorJson, string eventArgs)
         {
+            AssertInitialized();
             RendererRegistryEventDispatcher.BrowserEventDescriptor eventDescriptor = null;
             try
             {
-                AssertInitialized();
-                eventDescriptor = ParseEventDescriptor(eventDescriptorJson);
-                if (eventDescriptor == null)
+                try
                 {
+                    eventDescriptor = JsonSerializer.Deserialize<RendererRegistryEventDispatcher.BrowserEventDescriptor>(
+                        eventDescriptorJson,
+                        JsonSerializerOptionsProvider.Options);
+                }
+                catch (Exception ex)
+                {
+                    Log.DispatchEventFailedToParseEventDescriptor(_logger, ex);
                     return;
                 }
 
@@ -305,21 +311,6 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             {
                 Log.DispatchEventFailedToDispatchEvent(_logger, eventDescriptor != null ? eventDescriptor.EventHandlerId.ToString() : null, ex);
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
-            }
-        }
-
-        private RendererRegistryEventDispatcher.BrowserEventDescriptor ParseEventDescriptor(string eventDescriptorJson)
-        {
-            try
-            {
-                return JsonSerializer.Deserialize<RendererRegistryEventDispatcher.BrowserEventDescriptor>(
-                    eventDescriptorJson,
-                    JsonSerializerOptionsProvider.Options);
-            }
-            catch (Exception ex)
-            {
-                Log.DispatchEventFailedToParseEventDescriptor(_logger, ex);
-                return null;
             }
         }
 
