@@ -93,6 +93,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             await Renderer.Dispatcher.InvokeAsync(async () =>
             {
+                if (_initialized)
+                {
+                    throw new InvalidOperationException("The circuit host is already initialized.");
+                }
+
                 try
                 {
                     SetCurrentCircuitHost(this);
@@ -131,7 +136,6 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 {
                     return;
                 }
-
 
                 try
                 {
@@ -240,9 +244,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public async Task BeginInvokeDotNetFromJS(string callId, string assemblyName, string methodIdentifier, long dotNetObjectId, string argsJson)
         {
+            AssertInitialized();
+            AssertNotDisposed();
+
             try
             {
-                AssertInitialized();
                 if (assemblyName == "Microsoft.AspNetCore.Components.Web" && methodIdentifier == "DispatchEvent")
                 {
                     Log.DispatchEventTroughJSInterop(_logger);
@@ -266,9 +272,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public async Task EndInvokeJSFromDotNet(long asyncCall, bool succeded, string arguments)
         {
+            AssertInitialized();
+            AssertNotDisposed();
+
             try
             {
-                AssertInitialized();
 
                 await Renderer.Dispatcher.InvokeAsync(() =>
                 {
@@ -295,6 +303,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         public async Task DispatchEvent(string eventDescriptorJson, string eventArgs)
         {
             AssertInitialized();
+            AssertNotDisposed();
+
             RendererRegistryEventDispatcher.BrowserEventDescriptor eventDescriptor = null;
             try
             {
@@ -325,9 +335,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public async Task OnLocationChangedAsync(string uri, bool intercepted)
         {
+            AssertInitialized();
+            AssertNotDisposed();
+
             try
             {
-                AssertInitialized();
                 await Renderer.Dispatcher.InvokeAsync(() =>
                 {
                     SetCurrentCircuitHost(this);
@@ -355,6 +367,9 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public void SetCircuitUser(ClaimsPrincipal user)
         {
+            // This can be called before the circuit is initialized.
+            AssertNotDisposed();
+
             var authenticationStateProvider = Services.GetService<AuthenticationStateProvider>() as IHostEnvironmentAuthenticationStateProvider;
             if (authenticationStateProvider != null)
             {
@@ -365,6 +380,9 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         internal void SendPendingBatches()
         {
+            AssertInitialized();
+            AssertNotDisposed();
+
             // Dispatch any buffered renders we accumulated during a disconnect.
             // Note that while the rendering is async, we cannot await it here. The Task returned by ProcessBufferedRenderBatches relies on
             // OnRenderCompleted to be invoked to complete, and SignalR does not allow concurrent hub method invocations.
@@ -381,6 +399,14 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             if (!_initialized)
             {
                 throw new InvalidOperationException("Circuit is being invoked prior to initialization.");
+            }
+        }
+
+        private void AssertNotDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(objectName: null);
             }
         }
 
