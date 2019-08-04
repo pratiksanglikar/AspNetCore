@@ -42,7 +42,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         }
 
         [Fact]
-        public async Task DisposeAsync_DisposesResourcesEvenIfCircuitHandlerOrComponentThrows()
+        public async Task DisposeAsync_DisposesResourcesAndSilencesException()
         {
             // Arrange
             var serviceScope = new Mock<IServiceScope>();
@@ -61,10 +61,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             circuitHost.Renderer.AssignRootComponentId(throwOnDisposeComponent);
 
             // Act
-            await Assert.ThrowsAsync<InvalidTimeZoneException>(async () =>
-            {
-                await circuitHost.DisposeAsync();
-            });
+            await circuitHost.DisposeAsync(); // Does not throw
 
             // Assert
             Assert.True(throwOnDisposeComponent.DidCallDispose);
@@ -182,7 +179,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             await initializeAsyncTask;
 
             // Assert: The async exception was reported via the side-channel
-            Assert.Same(ex, reportedErrors.Single().ExceptionObject);
+            var aex = Assert.IsType<AggregateException>(reportedErrors.Single().ExceptionObject);
+            Assert.Same(ex, aex.InnerExceptions.Single());
             Assert.False(reportedErrors.Single().IsTerminating);
         }
 

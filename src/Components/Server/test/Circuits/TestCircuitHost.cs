@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Runtime.ExceptionServices;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Rendering;
@@ -21,11 +20,6 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         private TestCircuitHost(string circuitId, IServiceScope scope, CircuitClientProxy client, RemoteRenderer renderer, IReadOnlyList<ComponentDescriptor> descriptors, RemoteJSRuntime jsRuntime, CircuitHandler[] circuitHandlers, ILogger logger)
             : base(circuitId, scope, client, renderer, descriptors, jsRuntime, circuitHandlers, logger)
         {
-        }
-
-        protected override void OnHandlerError(CircuitHandler circuitHandler, string handlerMethod, Exception ex)
-        {
-            ExceptionDispatchInfo.Capture(ex).Throw();
         }
 
         public static CircuitHost Create(

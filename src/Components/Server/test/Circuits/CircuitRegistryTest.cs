@@ -409,7 +409,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             protected override void OnEntryEvicted(object key, object value, EvictionReason reason, object state)
             {
                 base.OnEntryEvicted(key, value, reason, state);
-                OnAfterEntryEvicted();
+                OnAfterEntryEvicted?.Invoke();
             }
         }
 
