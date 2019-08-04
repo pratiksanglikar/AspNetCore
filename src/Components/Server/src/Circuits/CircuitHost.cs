@@ -8,8 +8,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Rendering;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.JSInterop;
 
 namespace Microsoft.AspNetCore.Components.Server.Circuits
@@ -18,6 +20,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
     {
         private readonly SemaphoreSlim HandlerLock = new SemaphoreSlim(1);
         private readonly IServiceScope _scope;
+        private readonly IOptions<CircuitOptions> _options;
         private readonly CircuitHandler[] _circuitHandlers;
         private readonly ILogger _logger;
         private bool _initialized;
@@ -43,11 +46,18 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             JSInterop.JSRuntime.SetCurrentJSRuntime(circuitHost.JSRuntime);
         }
 
+        // This event is fired when there's an unrecoverable exception coming from the circuit, and
+        // it need so be torn down. The registry listens to this even so that the circuit can
+        // be torn down even when a client is not connected.
+        //
+        // We don't expect the registry to do anything with the exception. We only provide it here
+        // for testability.
         public event UnhandledExceptionEventHandler UnhandledException;
 
         public CircuitHost(
             string circuitId,
             IServiceScope scope,
+            IOptions<CircuitOptions> options,
             CircuitClientProxy client,
             RemoteRenderer renderer,
             IReadOnlyList<ComponentDescriptor> descriptors,
@@ -56,7 +66,9 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             ILogger logger)
         {
             CircuitId = circuitId ?? throw new ArgumentNullException(nameof(circuitId));
+
             _scope = scope ?? throw new ArgumentNullException(nameof(scope));
+            _options = options ?? throw new ArgumentNullException(nameof(options));
             Client = client ?? throw new ArgumentNullException(nameof(client));
             Renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
             Descriptors = descriptors ?? throw new ArgumentNullException(nameof(descriptors));
@@ -381,8 +393,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
             catch (Exception ex)
             {
+                // An error completing JS interop is not considered fatal.
                 Log.EndInvokeDispatchException(_logger, ex);
-                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
 
@@ -401,7 +413,9 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
             catch (Exception ex)
             {
+                // Invalid event data is fatal. We expect a well-behaved client to send valid JSON.
                 Log.DispatchEventFailedToParseEventData(_logger, ex);
+                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
                 return;
             }
 
@@ -418,6 +432,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
             catch (Exception ex)
             {
+                // A failure in dispatching an event means that it was an attempt to use an invalid event id.
+                // A well-behaved client won't do this.
                 Log.DispatchEventFailedToDispatchEvent(_logger, webEventData.EventHandlerId.ToString(), ex);
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
@@ -497,15 +513,51 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
-        private void Renderer_UnhandledException(object sender, Exception e)
+        // An unhandled exception from the renderer is always fatal because it came from user code.
+        // We want to notify the client if it's still connected, and then tear-down the circuit.
+        private async void Renderer_UnhandledException(object sender, Exception e)
         {
+            await ReportUnhandledException(e);
             UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(e, isTerminating: false));
         }
 
-        private void SynchronizationContext_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        // An unhandled exception from the renderer is always fatal because it came from user code.
+        // We want to notify the client if it's still connected, and then tear-down the circuit.
+        private async void SynchronizationContext_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
+            await ReportUnhandledException((Exception)e.ExceptionObject);
             UnhandledException?.Invoke(this, e);
         }
+
+        private async Task ReportUnhandledException(Exception exception)
+        {
+            Log.CircuitUnhandledException(_logger, CircuitId, exception);
+            if (!Client.Connected)
+            {
+                return;
+            }
+
+            try
+            {
+                if (_options.Value.DetailedErrors)
+                {
+                    await NotifyClientError(Client, exception.ToString());
+                }
+                else
+                {
+                    var message =
+                        $"There was an unhandled exception on the current circuit, so this circuit will be terminated. For more details turn on " +
+                        $"detailed exceptions in '{typeof(CircuitOptions).Name}.{nameof(CircuitOptions.DetailedErrors)}'";
+                    await NotifyClientError(Client, message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.CircuitUnhandledExceptionFailed(_logger, CircuitId, ex);
+            }
+        }
+
+        private static Task NotifyClientError(IClientProxy client, string error) => client.SendAsync("JS.Error", error);
 
         private static class Log
         {
@@ -520,6 +572,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             private static readonly Action<ILogger, string, string, Exception> _onConnectionDown;
             private static readonly Action<ILogger, string, Exception> _onCircuitClosed;
             private static readonly Action<ILogger, Type, string, string, Exception> _circuitHandlerFailed;
+            private static readonly Action<ILogger, string, Exception> _circuitUnhandledException;
+            private static readonly Action<ILogger, string, Exception> _circuitUnhandledExceptionFailed;
 
             private static readonly Action<ILogger, string, string, string, Exception> _beginInvokeDotNetStatic;
             private static readonly Action<ILogger, string, long, string, Exception> _beginInvokeDotNetInstance;
@@ -546,6 +600,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 public static readonly EventId OnConnectionDown = new EventId(108, "OnConnectionDown");
                 public static readonly EventId OnCircuitClosed = new EventId(109, "OnCircuitClosed");
                 public static readonly EventId CircuitHandlerFailed = new EventId(110, "CircuitHandlerFailed");
+                public static readonly EventId CircuitUnhandledException = new EventId(111, "CircuitUnhandledException");
+                public static readonly EventId CircuitUnhandledExceptionFailed = new EventId(112, "CircuitUnhandledExceptionFailed");
 
                 // 200s used for interactive stuff
                 public static readonly EventId InvalidBrowserEventFormat = new EventId(200, "InvalidBrowserEventFormat");
@@ -617,6 +673,16 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                     LogLevel.Error,
                     EventIds.CircuitHandlerFailed,
                     "Unhandled error invoking circuit handler type {handlerType}.{handlerMethod}: {Message}");
+
+                 _circuitUnhandledException = LoggerMessage.Define<string>(
+                    LogLevel.Warning,
+                    EventIds.CircuitUnhandledException,
+                    "Unhandled exception in circuit {CircuitId}");
+
+                 _circuitUnhandledExceptionFailed = LoggerMessage.Define<string>(
+                     LogLevel.Debug,
+                     EventIds.CircuitUnhandledExceptionFailed,
+                     "Failed to transmit exception to client in circuit {CircuitId}");
 
                 _beginInvokeDotNetStatic = LoggerMessage.Define<string, string, string>(
                     LogLevel.Debug,
@@ -690,6 +756,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                     exception);
             }
 
+            public static void CircuitUnhandledException(ILogger logger, string circuitId, Exception exception) => _circuitUnhandledException(logger, circuitId, exception);
+            public static void CircuitUnhandledExceptionFailed(ILogger logger, string circuitId, Exception exception) => _circuitUnhandledExceptionFailed(logger, circuitId, exception);
             public static void EndInvokeDispatchException(ILogger logger, Exception ex) => _endInvokeDispatchException(logger, ex);
             public static void EndInvokeJSFailed(ILogger logger, long asyncHandle, string arguments) => _endInvokeJSFailed(logger, asyncHandle, arguments, null);
             public static void EndInvokeJSSucceeded(ILogger logger, long asyncCall) => _endInvokeJSSucceeded(logger, asyncCall, null);

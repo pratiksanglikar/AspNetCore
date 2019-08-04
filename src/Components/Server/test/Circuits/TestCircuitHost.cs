@@ -17,8 +17,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 {
     internal class TestCircuitHost : CircuitHost
     {
-        private TestCircuitHost(string circuitId, IServiceScope scope, CircuitClientProxy client, RemoteRenderer renderer, IReadOnlyList<ComponentDescriptor> descriptors, RemoteJSRuntime jsRuntime, CircuitHandler[] circuitHandlers, ILogger logger)
-            : base(circuitId, scope, client, renderer, descriptors, jsRuntime, circuitHandlers, logger)
+        private TestCircuitHost(string circuitId, IServiceScope scope, IOptions<CircuitOptions> options, CircuitClientProxy client, RemoteRenderer renderer, IReadOnlyList<ComponentDescriptor> descriptors, RemoteJSRuntime jsRuntime, CircuitHandler[] circuitHandlers, ILogger logger)
+            : base(circuitId, scope, options, client, renderer, descriptors, jsRuntime, circuitHandlers, logger)
         {
         }
 
@@ -49,6 +49,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             return new TestCircuitHost(
                 circuitId ?? Guid.NewGuid().ToString(),
                 serviceScope,
+                Options.Create(new CircuitOptions()),
                 clientProxy,
                 remoteRenderer,
                 new List<ComponentDescriptor>(),

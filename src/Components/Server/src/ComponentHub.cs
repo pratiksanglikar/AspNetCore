@@ -132,8 +132,6 @@ namespace Microsoft.AspNetCore.Components.Server
                     uri,
                     Context.User);
 
-                circuitHost.UnhandledException += CircuitHost_UnhandledException;
-
                 // Fire-and-forget the initialization process, because we can't block the
                 // SignalR message loop (we'd get a deadlock if any of the initialization
                 // logic relied on receiving a subsequent message from SignalR), and it will
@@ -164,8 +162,6 @@ namespace Microsoft.AspNetCore.Components.Server
             if (circuitHost != null)
             {
                 CircuitHost = circuitHost;
-                circuitHost.UnhandledException += CircuitHost_UnhandledException;
-
                 circuitHost.SetCircuitUser(Context.User);
                 circuitHost.SendPendingBatches();
                 return true;
@@ -248,38 +244,7 @@ namespace Microsoft.AspNetCore.Components.Server
             return circuitHost;
         }
 
-        private async void CircuitHost_UnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            var circuitHost = (CircuitHost)sender;
-            var circuitId = circuitHost?.CircuitId;
-
-            try
-            {
-                Log.UnhandledExceptionInCircuit(_logger, circuitId, (Exception)e.ExceptionObject);
-                if (_options.DetailedErrors)
-                {
-                    await NotifyClientError(circuitHost.Client, e.ExceptionObject.ToString());
-                }
-                else
-                {
-                    var message = $"There was an unhandled exception on the current circuit, so this circuit will be terminated. For more details turn on " +
-                        $"detailed exceptions in '{typeof(CircuitOptions).Name}.{nameof(CircuitOptions.DetailedErrors)}'";
-
-                    await NotifyClientError(circuitHost.Client, message);
-                }
-
-                // We generally can't abort the connection here since this is an async
-                // callback. The Hub has already been torn down. We'll rely on the
-                // client to abort the connection if we successfully transmit an error.
-            }
-            catch (Exception ex)
-            {
-                Log.FailedToTransmitException(_logger, circuitId, ex);
-            }
-        }
-
-        private static Task NotifyClientError(IClientProxy client, string error) =>
-            client.SendAsync("JS.Error", error);
+        private static Task NotifyClientError(IClientProxy client, string error) => client.SendAsync("JS.Error", error);
 
         private static class Log
         {
@@ -292,23 +257,20 @@ namespace Microsoft.AspNetCore.Components.Server
             private static readonly Action<ILogger, string, Exception> _unhandledExceptionInCircuit =
                 LoggerMessage.Define<string>(LogLevel.Warning, new EventId(3, "UnhandledExceptionInCircuit"), "Unhandled exception in circuit {CircuitId}");
 
-            private static readonly Action<ILogger, string, Exception> _failedToTransmitException =
-                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(4, "FailedToTransmitException"), "Failed to transmit exception to client in circuit {CircuitId}");
-
             private static readonly Action<ILogger, string, Exception> _circuitAlreadyInitialized =
-                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(5, "CircuitAlreadyInitialized"), "The circuit host '{CircuitId}' has already been initialized");
+                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(4, "CircuitAlreadyInitialized"), "The circuit host '{CircuitId}' has already been initialized");
 
             private static readonly Action<ILogger, string, Exception> _circuitHostNotInitialized =
-                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(6, "CircuitHostNotInitialized"), "Call to '{CallSite}' received before the circuit host initialization");
+                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(5, "CircuitHostNotInitialized"), "Call to '{CallSite}' received before the circuit host initialization");
 
             private static readonly Action<ILogger, string, Exception> _circuitTerminatedGracefully =
-                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(7, "CircuitTerminatedGracefully"), "Circuit '{CircuitId}' terminated gracefully");
+                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(6, "CircuitTerminatedGracefully"), "Circuit '{CircuitId}' terminated gracefully");
 
             private static readonly Action<ILogger, string, Exception> _invalidInputData =
-                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(8, "InvalidInputData"), "Call to '{CallSite}' received invalid input data");
+                LoggerMessage.Define<string>(LogLevel.Debug, new EventId(7, "InvalidInputData"), "Call to '{CallSite}' received invalid input data");
 
             private static readonly Action<ILogger, Exception> _circuitInitializationFailed =
-                LoggerMessage.Define(LogLevel.Debug, new EventId(9, "CircuitInitializationFailed"), "Circuit initialization failed");
+                LoggerMessage.Define(LogLevel.Debug, new EventId(8, "CircuitInitializationFailed"), "Circuit initialization failed");
 
             public static void NoComponentsRegisteredInEndpoint(ILogger logger, string endpointDisplayName)
             {
@@ -323,11 +285,6 @@ namespace Microsoft.AspNetCore.Components.Server
             public static void UnhandledExceptionInCircuit(ILogger logger, string circuitId, Exception exception)
             {
                 _unhandledExceptionInCircuit(logger, circuitId, exception);
-            }
-
-            public static void FailedToTransmitException(ILogger logger, string circuitId, Exception transmissionException)
-            {
-                _failedToTransmitException(logger, circuitId, transmissionException);
             }
 
             public static void CircuitAlreadyInitialized(ILogger logger, string circuitId) => _circuitAlreadyInitialized(logger, circuitId, null);

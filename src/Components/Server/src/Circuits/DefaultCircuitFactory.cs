@@ -33,8 +33,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             IOptions<CircuitOptions> options)
         {
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
-            _loggerFactory = loggerFactory;
-            _logger = _loggerFactory.CreateLogger<CircuitFactory>();
+            _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+            _options = options ?? throw new ArgumentNullException(nameof(options));
             _circuitIdFactory = circuitIdFactory ?? throw new ArgumentNullException(nameof(circuitIdFactory));
             _options = options.Value;
         }
@@ -87,6 +87,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             var circuitHost = new CircuitHost(
                 _circuitIdFactory.CreateCircuitId(),
                 scope,
+                _options,
                 client,
                 renderer,
                 components,
