@@ -2047,6 +2047,47 @@ namespace Microsoft.AspNetCore.Components.Test
         }
 
         [Fact]
+        public void RenderBatch_HandlesExceptionsFromAllDisposedComponents()
+        {
+            // Arrange
+            var renderer = new TestRenderer { ShouldHandleExceptions = true };
+            var exception1 = new Exception();
+            var exception2 = new Exception();
+
+            var firstRender = true;
+            var component = new TestComponent(builder =>
+            {
+                if (firstRender)
+                {
+                    builder.AddContent(0, "Hello");
+                    builder.OpenComponent<DisposableComponent>(1);
+                    builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => throw exception1));
+                    builder.CloseComponent();
+
+                    builder.OpenComponent<DisposableComponent>(2);
+                    builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => throw exception2));
+                    builder.CloseComponent();
+                }
+            });
+            var componentId = renderer.AssignRootComponentId(component);
+            component.TriggerRender();
+
+            // Act: Second render
+            firstRender = false;
+            component.TriggerRender();
+
+            // Assert: Applicable children are included in disposal list
+            Assert.Equal(2, renderer.Batches.Count);
+            Assert.Equal(new[] { 1, 2 }, renderer.Batches[1].DisposedComponentIDs);
+
+            // Outer component is still alive and not disposed.
+            Assert.False(component.Disposed);
+            var aex = Assert.IsType<AggregateException>(Assert.Single(renderer.HandledExceptions));
+            Assert.Contains(exception1, aex.InnerExceptions);
+            Assert.Contains(exception2, aex.InnerExceptions);
+        }
+
+        [Fact]
         public async Task DisposesEventHandlersWhenAttributeValueChanged()
         {
             // Arrange
@@ -3366,9 +3407,9 @@ namespace Microsoft.AspNetCore.Components.Test
 
             // All components must be disposed even if some throw as part of being diposed.
             Assert.True(component.Disposed);
-            Assert.Equal(2, renderer.HandledExceptions.Count);
-            Assert.Contains(exception1, renderer.HandledExceptions);
-            Assert.Contains(exception2, renderer.HandledExceptions);
+            var aex = Assert.IsType<AggregateException>(Assert.Single(renderer.HandledExceptions));
+            Assert.Contains(exception1, aex.InnerExceptions);
+            Assert.Contains(exception2, aex.InnerExceptions);
         }
 
         [Theory]
