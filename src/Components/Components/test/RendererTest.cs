@@ -3114,6 +3114,81 @@ namespace Microsoft.AspNetCore.Components.Test
         }
 
         [Fact]
+        public async Task ExceptionThrownFromConstructor()
+        {
+            // Arrange
+            var renderer = new TestRenderer { ShouldHandleExceptions = true };
+            var component = new TestComponent(builder =>
+            {
+                builder.OpenComponent<ConstructorThrowingComponent>(0);
+                builder.CloseComponent();
+            });
+
+            // Act/Assert
+            var componentId = renderer.AssignRootComponentId(component);
+            var renderTask = renderer.RenderRootComponentAsync(componentId);
+
+            await renderTask;
+            Assert.True(renderTask.IsCompletedSuccessfully);
+            Assert.Same(ConstructorThrowingComponent.Exception, Assert.Single(renderer.HandledExceptions).GetBaseException());
+        }
+
+        private class ConstructorThrowingComponent : IComponent
+        {
+            public static readonly Exception Exception = new InvalidTimeZoneException();
+
+            public ConstructorThrowingComponent()
+            {
+                throw Exception;
+            }
+
+            public void Attach(RenderHandle renderHandle)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task SetParametersAsync(ParameterView parameters)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        [Fact]
+        public async Task ExceptionThrownFromAttach()
+        {
+            // Arrange
+            var renderer = new TestRenderer { ShouldHandleExceptions = true };
+            var component = new TestComponent(builder =>
+            {
+                builder.OpenComponent<AttachThrowingComponent>(0);
+                builder.CloseComponent();
+            });
+
+            // Act/Assert
+            var componentId = renderer.AssignRootComponentId(component);
+            var renderTask = renderer.RenderRootComponentAsync(componentId);
+
+            await renderTask;
+            Assert.True(renderTask.IsCompletedSuccessfully);
+            Assert.Same(AttachThrowingComponent.Exception, Assert.Single(renderer.HandledExceptions).GetBaseException());
+        }
+
+        private class AttachThrowingComponent : IComponent
+        {
+            public static readonly Exception Exception = new InvalidTimeZoneException();
+
+            public void Attach(RenderHandle renderHandle)
+            {
+                throw Exception;
+            }
+
+            public Task SetParametersAsync(ParameterView parameters)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        [Fact]
         public void SynchronousCancelledTasks_HandleAfterRender_Works()
         {
             // Arrange
