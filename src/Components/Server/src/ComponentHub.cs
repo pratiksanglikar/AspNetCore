@@ -159,6 +159,7 @@ namespace Microsoft.AspNetCore.Components.Server
 
         public async ValueTask<bool> ConnectCircuit(string circuitId)
         {
+            // ConnectionAsync will not throw.
             var circuitHost = await _circuitRegistry.ConnectAsync(circuitId, Clients.Caller, Context.ConnectionId, Context.ConnectionAborted);
             if (circuitHost != null)
             {

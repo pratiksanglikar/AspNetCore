@@ -154,6 +154,16 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             DisconnectedCircuits.Set(circuitHost.CircuitId, entry, entryOptions);
         }
 
+        // ConnectAsync is called from the CircuitHub - but the error handling story is a little bit complicated.
+        // We return the circuit from this method, but need to clean up the circuit on failure. So we don't want to
+        // throw from this method because we don't want to return a *failed* circuit.
+        //
+        // The solution is to handle exceptions here, and then return null to represent failure.
+        //
+        // 1. If the circuit id is invalue return null
+        // 2. If the circuit is not found return null
+        // 3. If the circuit is found, but fails to connect, we need to dispose it here and return null
+        // 4. If everything goes well, return the circuit.
         public virtual async Task<CircuitHost> ConnectAsync(string circuitId, IClientProxy clientProxy, string connectionId, CancellationToken cancellationToken)
         {
             Log.CircuitConnectStarted(_logger, circuitId);
@@ -169,6 +179,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
             Task circuitHandlerTask;
 
+            // We don't expect any of the logic inside the lock to throw, or run user code.
             lock (CircuitRegistryLock)
             {
                 // Transition the host from disconnected to connected if it's available. In this critical section, we return
@@ -188,7 +199,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 // b) out of order connection-up \ connection-down events e.g. a client that disconnects as soon it finishes reconnecting.
 
                 // Dispatch the circuit handlers inside the sync context to ensure the order of execution. CircuitHost executes circuit handlers inside of
-                //
+                // the sync context.
                 circuitHandlerTask = circuitHost.Renderer.Dispatcher.InvokeAsync(async () =>
                 {
                     if (previouslyConnected)
@@ -200,13 +211,22 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
                     await circuitHost.OnConnectionUpAsync(cancellationToken);
                 });
-
-                Log.ReconnectionSucceeded(_logger, circuitId);
             }
 
-            await circuitHandlerTask;
+            try
+            {
+                await circuitHandlerTask;
+                Log.ReconnectionSucceeded(_logger, circuitId);
+                return circuitHost;
+            }
+            catch (Exception ex)
+            {
+                Log.FailedToReconnectToCircuit(_logger, circuitId, ex);
+                await TerminateAsync(circuitId);
 
-            return circuitHost;
+                // Return null on failure, because we need to clean up the circuit.
+                return null;
+            }
         }
 
         protected virtual (CircuitHost circuitHost, bool previouslyConnected) ConnectCore(string circuitId, IClientProxy clientProxy, string connectionId)
@@ -448,8 +468,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             public static void ConnectingToDisconnectedCircuit(ILogger logger, string circuitId, string connectionId) =>
                 _connectingToDisconnectedCircuit(logger, circuitId, connectionId, null);
 
-            public static void FailedToReconnectToCircuit(ILogger logger, string circuitId) =>
-                _failedToReconnectToCircuit(logger, circuitId, null);
+            public static void FailedToReconnectToCircuit(ILogger logger, string circuitId, Exception exception = null) =>
+                _failedToReconnectToCircuit(logger, circuitId, exception);
 
             public static void ReconnectionSucceeded(ILogger logger, string circuitId) =>
                 _reconnectionSucceeded(logger, circuitId, null);

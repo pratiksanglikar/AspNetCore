@@ -89,6 +89,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         public IServiceProvider Services { get; }
 
+        // InitializeAsync is used in a fire-and-forget context, so it's responsible for its own
+        // error handling.
         public async Task InitializeAsync(CancellationToken cancellationToken)
         {
             Log.InitializationStarted(_logger);
