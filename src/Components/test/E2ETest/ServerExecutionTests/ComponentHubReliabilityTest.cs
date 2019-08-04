@@ -282,6 +282,47 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             });
         }
 
+        [Theory]
+        [InlineData("constructor-throw")]
+        [InlineData("attach-throw")]
+        [InlineData("setparameters-sync-throw")]
+        [InlineData("setparameters-async-throw")]
+        [InlineData("render-throw")]
+        [InlineData("afterrender-sync-throw")]
+        [InlineData("afterrender-async-throw")]
+        [InlineData("dispose-throw")]
+        public async Task ComponentLifecycleMethodThrowsExceptionTerminatesTheCircuit(string id)
+        {
+            // Arrange
+            var expectedError = "Unhandled exception in circuit .*";
+            var rootUri = _serverFixture.RootUri;
+            var baseUri = new Uri(rootUri, "/subdir");
+            Assert.True(await Client.ConnectAsync(baseUri, prerendered: false), "Couldn't connect to the app");
+            Assert.Single(Batches);
+
+            await Client.SelectAsync("test-selector-select", "BasicTestApp.ReliabilityComponent");
+
+            // Act
+            await Client.ExpectCircuitError(async () =>
+            {
+                // We want to click the element, but don't expect a DOM update.
+                Assert.True(Client.Hive.TryFindElementById(id, out var elementNode), "failed to find element");
+                await elementNode.ClickAsync(Client.HubConnection);
+            });
+
+            Assert.Contains(
+                Logs,
+                e => LogLevel.Error == e.LogLevel && Regex.IsMatch(e.Message, expectedError));
+
+            // Now if you try to click again, you will get *forcibly* disconnected for trying to talk to
+            // a circuit that's gone.
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                Assert.True(Client.Hive.TryFindElementById(id, out var elementNode), "failed to find element");
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await elementNode.ClickAsync(Client.HubConnection));
+            });
+        }
+
         public void Dispose()
         {
             TestSink.MessageLogged -= LogMessages;
