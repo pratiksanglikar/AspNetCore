@@ -451,24 +451,39 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 await Renderer.Dispatcher.InvokeAsync(() =>
                 {
                     SetCurrentCircuitHost(this);
-                    Log.LocationChange(_logger, CircuitId, uri);
+                    Log.LocationChange(_logger, uri, CircuitId);
                     var navigationManager = (RemoteNavigationManager)Services.GetRequiredService<NavigationManager>();
                     navigationManager.NotifyLocationChanged(uri, intercepted);
-                    Log.LocationChangeSucceeded(_logger, CircuitId, uri);
+                    Log.LocationChangeSucceeded(_logger, uri, CircuitId);
                 });
+            }
+
+            // It's up to the NavigationManager implementation to validate the URI.
+            //
+            // Note that it's also possible that setting the URI could cause a failure in code that listens
+            // to NavigationManager.LocationChanged.
+            //
+            // In either case, a well-behaved client will not send invalid URIs, and we don't really
+            // want to continue processing with the circuit if setting the URI failed inside application
+            // code. The safest thing to do is consider it a critical failure since URI is global state,
+            // and a failure means that an update to global state was partially applied.
+            catch (LocationChangeException nex)
+            {
+                // LocationChangeException means that it failed in user-code. Treat this like an unhandled
+                // exception in user-code.
+                Log.LocationChangeFailedInCircuit(_logger, uri, CircuitId, nex);
+                await ReportUnhandledException(nex);
+                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(nex, isTerminating: false));
             }
             catch (Exception ex)
             {
-                // It's up to the NavigationManager implementation to validate the URI.
-                //
-                // Note that it's also possible that setting the URI could cause a failure in code that listens
-                // to NavigationManager.LocationChanged.
-                //
-                // In either case, a well-behaved client will not send invalid URIs, and we don't really
-                // want to continue processing with the circuit if setting the URI failed inside application
-                // code. The safest thing to do is consider it a critical failure since URI is global state,
-                // and a failure means that an update to global state was partially applied.
-                Log.LocationChangeFailed(_logger, CircuitId, uri, ex);
+                // Any other exception means that it failed validation, or inside the NavigationManager. Treat
+                // this like bad data.
+                Log.LocationChangeFailed(_logger, uri, CircuitId, ex);
+                if (Client.Connected)
+                {
+                    await NotifyClientError(Client, $"Location change to {uri} failed.");
+                }
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
@@ -585,6 +600,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             private static readonly Action<ILogger, string, string, Exception> _locationChange;
             private static readonly Action<ILogger, string, string, Exception> _locationChangeSucceeded;
             private static readonly Action<ILogger, string, string, Exception> _locationChangeFailed;
+            private static readonly Action<ILogger, string, string, Exception> _locationChangeFailedInCircuit;
 
             private static class EventIds
             {
@@ -615,6 +631,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 public static readonly EventId LocationChange = new EventId(208, "LocationChange");
                 public static readonly EventId LocationChangeSucceded = new EventId(209, "LocationChangeSucceeded");
                 public static readonly EventId LocationChangeFailed = new EventId(210, "LocationChangeFailed");
+                public static readonly EventId LocationChangeFailedInCircuit = new EventId(210, "LocationChangeFailedInCircuit");
             }
 
             static Log()
@@ -675,7 +692,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                     "Unhandled error invoking circuit handler type {handlerType}.{handlerMethod}: {Message}");
 
                  _circuitUnhandledException = LoggerMessage.Define<string>(
-                    LogLevel.Warning,
+                    LogLevel.Error,
                     EventIds.CircuitUnhandledException,
                     "Unhandled exception in circuit {CircuitId}");
 
@@ -722,17 +739,22 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 _locationChange = LoggerMessage.Define<string, string>(
                     LogLevel.Debug,
                     EventIds.LocationChange,
-                    "Location changing to {URI} in {CircuitId}.");
+                    "Location changing to {URI} in circuit {CircuitId}.");
 
                 _locationChangeSucceeded = LoggerMessage.Define<string, string>(
                     LogLevel.Debug,
                     EventIds.LocationChangeSucceded,
-                    "Location change to {URI} in {CircuitId} succeded.");
+                    "Location change to {URI} in circuit {CircuitId} succeded.");
 
                 _locationChangeFailed = LoggerMessage.Define<string, string>(
                     LogLevel.Debug,
                     EventIds.LocationChangeFailed,
-                    "Location change to {URI} in {CircuitId} failed.");
+                    "Location change to {URI} in circuit {CircuitId} failed.");
+
+                _locationChangeFailedInCircuit = LoggerMessage.Define<string, string>(
+                    LogLevel.Error,
+                    EventIds.LocationChangeFailed,
+                    "Location change to {URI} in circuit {CircuitId} failed.");
             }
 
             public static void InitializationStarted(ILogger logger) =>_intializationStarted(logger, null);
@@ -776,9 +798,10 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 }
             }
 
-            public static void LocationChange(ILogger logger, string circuitId, string uri) => _locationChange(logger, circuitId, uri, null);
-            public static void LocationChangeSucceeded(ILogger logger, string circuitId, string uri) => _locationChangeSucceeded(logger, circuitId, uri, null);
-            public static void LocationChangeFailed(ILogger logger, string circuitId, string uri, Exception exception) => _locationChangeFailed(logger, circuitId, uri, exception);
+            public static void LocationChange(ILogger logger, string uri, string circuitId) => _locationChange(logger, uri, circuitId, null);
+            public static void LocationChangeSucceeded(ILogger logger, string uri, string circuitId) => _locationChangeSucceeded(logger, uri, circuitId, null);
+            public static void LocationChangeFailed(ILogger logger, string uri, string circuitId, Exception exception) => _locationChangeFailed(logger, uri, circuitId, exception);
+            public static void LocationChangeFailedInCircuit(ILogger logger, string uri, string circuitId, Exception exception) => _locationChangeFailedInCircuit(logger, uri, circuitId, exception);
         }
     }
 }

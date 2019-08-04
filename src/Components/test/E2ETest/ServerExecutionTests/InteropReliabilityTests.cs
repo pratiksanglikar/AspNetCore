@@ -498,7 +498,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
 
             Assert.Contains(
                 logEvents,
-                e => LogLevel.Warning == e.logLevel &&
+                e => LogLevel.Error == e.logLevel &&
                     "CircuitUnhandledException" == e.eventIdName &&
                     "Handler threw an exception" == e.exception.Message);
 

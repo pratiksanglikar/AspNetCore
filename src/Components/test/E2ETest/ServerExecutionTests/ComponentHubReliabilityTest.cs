@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Ignitor;
 using Microsoft.AspNetCore.Components.E2ETest.Infrastructure.ServerFixtures;
@@ -80,24 +81,6 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
 
             // Act
             await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync("StartCircuit", null, null));
-
-            // Assert
-            var actualError = Assert.Single(Errors);
-            Assert.Matches(expectedError, actualError);
-            Assert.DoesNotContain(Logs, l => l.LogLevel > LogLevel.Information);
-        }
-
-        [Fact]
-        public async Task CannotStartCircuitWithInvalidUris()
-        {
-            // Arrange
-            var expectedError = "The uris provided are invalid.";
-            var rootUri = _serverFixture.RootUri;
-            var uri = new Uri(rootUri, "/subdir");
-            Assert.True(await Client.ConnectAsync(uri, prerendered: false, connectAutomatically: false), "Couldn't connect to the app");
-
-            // Act
-            await Client.ExpectCircuitErrorAndDisconnect(() => Client.HubConnection.SendAsync("StartCircuit", uri.AbsoluteUri, "/foo"));
 
             // Assert
             var actualError = Assert.Single(Errors);
@@ -244,6 +227,59 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.Equal(expectedError, actualError);
             Assert.DoesNotContain(Logs, l => l.LogLevel > LogLevel.Information);
             Assert.Contains(Logs, l => (l.LogLevel, l.Message) == (LogLevel.Debug, "Call to 'OnLocationChanged' received before the circuit host initialization"));
+        }
+
+        [Fact]
+        public async Task OnLocationChanged_ReportsDebugForExceptionInValidation()
+        {
+            // Arrange
+            var expectedError = "Location change to http://example.com failed.";
+            var rootUri = _serverFixture.RootUri;
+            var baseUri = new Uri(rootUri, "/subdir");
+            Assert.True(await Client.ConnectAsync(baseUri, prerendered: false), "Couldn't connect to the app");
+            Assert.Single(Batches);
+
+            // Act
+            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+                "OnLocationChanged",
+                "http://example.com",
+                false));
+
+            // Assert
+            var actualError = Assert.Single(Errors);
+            Assert.Equal(expectedError, actualError);
+            Assert.DoesNotContain(Logs, l => l.LogLevel > LogLevel.Information);
+            Assert.Contains(Logs, l =>
+            {
+                return l.LogLevel == LogLevel.Debug && Regex.IsMatch(l.Message, "Location change to http://example.com in circuit .* failed.");
+            });
+        }
+
+        [Fact]
+        public async Task OnLocationChanged_ReportsErrorForExceptionInUserCode()
+        {
+            // Arrange
+            var expectedError = "There was an unhandled exception .?";
+            var rootUri = _serverFixture.RootUri;
+            var baseUri = new Uri(rootUri, "/subdir");
+            Assert.True(await Client.ConnectAsync(baseUri, prerendered: false), "Couldn't connect to the app");
+            Assert.Single(Batches);
+
+            await Client.SelectAsync("test-selector-select", "BasicTestApp.NavigationFailureComponent");
+
+            // Act
+            await Client.ExpectCircuitError(() => Client.HubConnection.SendAsync(
+                "OnLocationChanged",
+                new Uri(baseUri, "/test").AbsoluteUri,
+                false)); 
+
+            // Assert
+            var actualError = Assert.Single(Errors);
+            Assert.Matches(expectedError, actualError);
+            Assert.Contains(Logs, l =>
+            {
+                return l.LogLevel == LogLevel.Error && Regex.IsMatch(l.Message, "Unhandled exception in circuit .*");
+            });
         }
 
         public void Dispose()
