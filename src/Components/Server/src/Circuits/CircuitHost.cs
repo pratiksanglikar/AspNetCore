@@ -330,6 +330,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
+        // BeginInvokeDotNetFromJS is used in a fire-and-forget context, so it's responsible for its own
+        // error handling.
         public async Task BeginInvokeDotNetFromJS(string callId, string assemblyName, string methodIdentifier, long dotNetObjectId, string argsJson)
         {
             AssertInitialized();
@@ -352,6 +354,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
+        // EndInvokeJSFromDotNet is used in a fire-and-forget context, so it's responsible for its own
+        // error handling.
         public async Task EndInvokeJSFromDotNet(long asyncCall, bool succeded, string arguments)
         {
             AssertInitialized();
@@ -378,9 +382,12 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             catch (Exception ex)
             {
                 Log.EndInvokeDispatchException(_logger, ex);
+                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
 
+        // DispatchEvent is used in a fire-and-forget context, so it's responsible for its own
+        // error handling.
         public async Task DispatchEvent(string eventDescriptorJson, string eventArgsJson)
         {
             AssertInitialized();
@@ -416,6 +423,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
+        // OnLocationChangedAsync is used in a fire-and-forget context, so it's responsible for its own
+        // error handling.
         public async Task OnLocationChangedAsync(string uri, bool intercepted)
         {
             AssertInitialized();
