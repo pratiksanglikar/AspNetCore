@@ -105,11 +105,23 @@ namespace Microsoft.AspNetCore.Components.Rendering
             return exception == null;
         }
 
+        // Callers expect this method to always return a faulted task.
         public Task NotifyRenderCompletedAsync()
         {
             if (Component is IHandleAfterRender handlerAfterRender)
             {
-                return handlerAfterRender.OnAfterRenderAsync();
+                try
+                {
+                    return handlerAfterRender.OnAfterRenderAsync();
+                }
+                catch (OperationCanceledException cex)
+                {
+                    return Task.FromCanceled(cex.CancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    return Task.FromException(ex);
+                }
             }
 
             return Task.CompletedTask;

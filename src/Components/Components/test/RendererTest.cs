@@ -3100,7 +3100,7 @@ namespace Microsoft.AspNetCore.Components.Test
         }
 
         [Fact]
-        public async Task ExceptionsThrownFromHandleAfterRender_AreHandled()
+        public async Task ExceptionsThrownFromHandleAfterRender_Sync_AreHandled()
         {
             // Arrange
             var renderer = new TestRenderer { ShouldHandleExceptions = true };
@@ -3119,7 +3119,7 @@ namespace Microsoft.AspNetCore.Components.Test
                     {
                         new NestedAsyncComponent.ExecutionAction
                         {
-                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsync,
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncSync,
                             EventAction = () =>
                             {
                                 throw exception;
@@ -3130,12 +3130,67 @@ namespace Microsoft.AspNetCore.Components.Test
                     {
                         new NestedAsyncComponent.ExecutionAction
                         {
-                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsync,
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncSync,
+                            EventAction = () =>
+                            {
+                                taskCompletionSource.TrySetResult(0);
+                                return Task.FromResult((1, NestedAsyncComponent.EventType.OnAfterRenderAsyncSync));
+                            },
+                        }
+                    }
+                },
+                [nameof(NestedAsyncComponent.WhatToRender)] = new Dictionary<int, Func<NestedAsyncComponent, RenderFragment>>
+                {
+                    [0] = CreateRenderFactory(new[] { 1 }),
+                    [1] = CreateRenderFactory(Array.Empty<int>()),
+                },
+            }));
+
+            Assert.True(renderTask.IsCompletedSuccessfully);
+
+            // OnAfterRenderAsync happens in the background. Make it more predictable, by gating it until we're ready to capture exceptions.
+            await taskCompletionSource.Task.TimeoutAfter(TimeSpan.FromSeconds(10));
+            Assert.Same(exception, Assert.Single(renderer.HandledExceptions).GetBaseException());
+        }
+
+        [Fact]
+        public async Task ExceptionsThrownFromHandleAfterRender_Async_AreHandled()
+        {
+            // Arrange
+            var renderer = new TestRenderer { ShouldHandleExceptions = true };
+            var component = new NestedAsyncComponent();
+            var exception = new InvalidTimeZoneException();
+
+            var taskCompletionSource = new TaskCompletionSource<int>();
+
+            // Act/Assert
+            var componentId = renderer.AssignRootComponentId(component);
+            var renderTask = renderer.RenderRootComponentAsync(componentId, ParameterView.FromDictionary(new Dictionary<string, object>
+            {
+                [nameof(NestedAsyncComponent.EventActions)] = new Dictionary<int, IList<NestedAsyncComponent.ExecutionAction>>
+                {
+                    [0] = new[]
+                    {
+                        new NestedAsyncComponent.ExecutionAction
+                        {
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncAsync,
+                            EventAction = async () =>
+                            {
+                                await Task.Yield();
+                                throw exception;
+                            },
+                        }
+                    },
+                    [1] = new[]
+                    {
+                        new NestedAsyncComponent.ExecutionAction
+                        {
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncAsync,
                             EventAction = async () =>
                             {
                                 await Task.Yield();
                                 taskCompletionSource.TrySetResult(0);
-                                return (1, NestedAsyncComponent.EventType.OnAfterRenderAsync);
+                                return (1, NestedAsyncComponent.EventType.OnAfterRenderAsyncAsync);
                             },
                         }
                     }
@@ -3248,7 +3303,7 @@ namespace Microsoft.AspNetCore.Components.Test
                     {
                         new NestedAsyncComponent.ExecutionAction
                         {
-                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsync,
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncAsync,
                             EventAction = () => tcs.Task,
                         }
                     },
@@ -3282,7 +3337,7 @@ namespace Microsoft.AspNetCore.Components.Test
                     {
                         new NestedAsyncComponent.ExecutionAction
                         {
-                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsync,
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncAsync,
                             EventAction = () => tcs.Task,
                         }
                     },
@@ -3319,7 +3374,7 @@ namespace Microsoft.AspNetCore.Components.Test
                     {
                         new NestedAsyncComponent.ExecutionAction
                         {
-                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsync,
+                            Event = NestedAsyncComponent.EventType.OnAfterRenderAsyncSync,
                             EventAction = () =>
                             {
                                 taskCompletionSource.TrySetResult(0);
@@ -4057,6 +4112,7 @@ namespace Microsoft.AspNetCore.Components.Test
                 if (TryGetEntry(EventType.OnInit, out var entry))
                 {
                     var result = entry.EventAction();
+                    Assert.True(result.IsCompleted, "Task must complete synchronously.");
                     LogResult(result.Result);
                 }
             }
@@ -4065,8 +4121,9 @@ namespace Microsoft.AspNetCore.Components.Test
             {
                 if (TryGetEntry(EventType.OnInitAsyncSync, out var entrySync))
                 {
-                    var result = await entrySync.EventAction();
-                    LogResult(result);
+                    var result = entrySync.EventAction();
+                    Assert.True(result.IsCompleted, "Task must complete synchronously.");
+                    LogResult(result.Result);
                 }
                 else if (TryGetEntry(EventType.OnInitAsyncAsync, out var entryAsync))
                 {
@@ -4080,6 +4137,7 @@ namespace Microsoft.AspNetCore.Components.Test
                 if (TryGetEntry(EventType.OnParametersSet, out var entry))
                 {
                     var result = entry.EventAction();
+                    Assert.True(result.IsCompleted, "Task must complete synchronously.");
                     LogResult(result.Result);
                 }
                 base.OnParametersSet();
@@ -4089,10 +4147,9 @@ namespace Microsoft.AspNetCore.Components.Test
             {
                 if (TryGetEntry(EventType.OnParametersSetAsyncSync, out var entrySync))
                 {
-                    var result = await entrySync.EventAction();
-                    LogResult(result);
-
-                    await entrySync.EventAction();
+                    var result = entrySync.EventAction();
+                    Assert.True(result.IsCompleted, "Task must complete synchronously.");
+                    LogResult(result.Result);
                 }
                 else if (TryGetEntry(EventType.OnParametersSetAsyncAsync, out var entryAsync))
                 {
@@ -4109,9 +4166,15 @@ namespace Microsoft.AspNetCore.Components.Test
 
             protected override async Task OnAfterRenderAsync()
             {
-                if (TryGetEntry(EventType.OnAfterRenderAsync, out var entry))
+                if (TryGetEntry(EventType.OnAfterRenderAsyncSync, out var entrySync))
                 {
-                    var result = await entry.EventAction();
+                    var result = entrySync.EventAction();
+                    Assert.True(result.IsCompleted, "Task must complete synchronously.");
+                    LogResult(result.Result);
+                }
+                if (TryGetEntry(EventType.OnAfterRenderAsyncAsync, out var entryAsync))
+                {
+                    var result = await entryAsync.EventAction();
                     LogResult(result);
                 }
             }
@@ -4170,7 +4233,8 @@ namespace Microsoft.AspNetCore.Components.Test
                 OnParametersSet,
                 OnParametersSetAsyncSync,
                 OnParametersSetAsyncAsync,
-                OnAfterRenderAsync,
+                OnAfterRenderAsyncSync,
+                OnAfterRenderAsyncAsync,
             }
         }
 
