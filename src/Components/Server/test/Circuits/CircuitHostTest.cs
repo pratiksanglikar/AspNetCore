@@ -38,6 +38,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             // Assert
             serviceScope.Verify(s => s.Dispose(), Times.Once());
             Assert.True(remoteRenderer.Disposed);
+            Assert.Null(circuitHost.Handle.CircuitHost);
         }
 
         [Fact]
