@@ -188,7 +188,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 // b) out of order connection-up \ connection-down events e.g. a client that disconnects as soon it finishes reconnecting.
 
                 // Dispatch the circuit handlers inside the sync context to ensure the order of execution. CircuitHost executes circuit handlers inside of
-                // 
+                //
                 circuitHandlerTask = circuitHost.Renderer.Dispatcher.InvokeAsync(async () =>
                 {
                     if (previouslyConnected)
@@ -288,7 +288,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
         }
 
-        public ValueTask Terminate(string circuitId)
+        public ValueTask TerminateAsync(string circuitId)
         {
             CircuitHost circuitHost;
             DisconnectedCircuitEntry entry = default;
