@@ -479,7 +479,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 _circuitExceptionHandlerFailed = LoggerMessage.Define<string>(
                     LogLevel.Error,
                     EventIds.CircuitExceptionHandlerFailed,
-                    "Exception handler for {CurcuitId} failed.");
+                    "Exception handler for {CircuitId} failed.");
             }
 
             public static void UnhandledExceptionDisposingCircuitHost(ILogger logger, Exception exception) =>
