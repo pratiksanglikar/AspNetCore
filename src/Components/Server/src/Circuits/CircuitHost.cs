@@ -102,11 +102,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
         // InitializeAsync is used in a fire-and-forget context, so it's responsible for its own
         // error handling.
-        public async Task InitializeAsync(CancellationToken cancellationToken)
+        public Task InitializeAsync(CancellationToken cancellationToken)
         {
             Log.InitializationStarted(_logger);
 
-            await Renderer.Dispatcher.InvokeAsync(async () =>
+            return Renderer.Dispatcher.InvokeAsync(async () =>
             {
                 if (_initialized)
                 {
