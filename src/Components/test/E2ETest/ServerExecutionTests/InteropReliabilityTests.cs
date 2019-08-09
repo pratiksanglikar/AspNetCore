@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Ignitor;
@@ -20,7 +19,6 @@ using Xunit;
 
 namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
 {
-    [Flaky("https://github.com/aspnet/AspNetCore/issues/12940", FlakyOn.All)]
     public class InteropReliabilityTests : IClassFixture<AspNetSiteServerFixture>
     {
         private static readonly TimeSpan DefaultLatencyTimeout = TimeSpan.FromSeconds(5);
@@ -260,11 +258,78 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             await ValidateClientKeepsWorking(Client, batches);
         }
 
-        [Fact(Skip = "https://github.com/aspnet/AspNetCore/issues/12962")]
-        public async Task LogsJSInteropCompletionsCallbacksAndContinuesWorkingInAllSituations()
+        [Fact]
+        public async Task JSInteropCompletionSuccess()
         {
             // Arrange
 
+            var (interopCalls, dotNetCompletions, batches) = ConfigureClient();
+            await GoToTestComponent(batches);
+            var sink = _serverFixture.Host.Services.GetRequiredService<TestSink>();
+            var logEvents = new List<(LogLevel logLevel, string)>();
+            sink.MessageLogged += (wc) => logEvents.Add((wc.LogLevel, wc.EventId.Name));
+
+            // Act
+            await Client.ClickAsync("triggerjsinterop-success");
+
+            var call = interopCalls.FirstOrDefault(call => call.identifier == "sendSuccessCallbackReturn");
+            Assert.NotEqual(default, call);
+
+            var id = call.id;
+            await Client.HubConnection.InvokeAsync(
+                "EndInvokeJSFromDotNet",
+                id++,
+                true,
+                $"[{id}, true, null]");
+
+            Assert.Single(
+                Client.FindElementById("errormessage-success").Children.OfType<TextNode>(),
+                e => "" == e.TextContent);
+
+            Assert.Contains((LogLevel.Debug, "EndInvokeJSSucceeded"), logEvents);
+        }
+
+        [Fact]
+        public async Task JSInteropThrowsInUserCode()
+        {
+            // Arrange
+            var (interopCalls, dotNetCompletions, batches) = ConfigureClient();
+            await GoToTestComponent(batches);
+            var sink = _serverFixture.Host.Services.GetRequiredService<TestSink>();
+            var logEvents = new List<(LogLevel logLevel, string)>();
+            sink.MessageLogged += (wc) => logEvents.Add((wc.LogLevel, wc.EventId.Name));
+
+            // Act
+            await Client.ClickAsync("triggerjsinterop-failure");
+
+            var call = interopCalls.FirstOrDefault(call => call.identifier == "sendFailureCallbackReturn");
+            Assert.NotEqual(default, call);
+
+            var id = call.id;
+            await Client.ExpectRenderBatch(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
+                    "EndInvokeJSFromDotNet",
+                    id,
+                    false,
+                    $"[{id}, false, \"There was an error invoking sendFailureCallbackReturn\"]");
+            });
+
+            Assert.Single(
+                Client.FindElementById("errormessage-failure").Children.OfType<TextNode>(),
+                e => "There was an error invoking sendFailureCallbackReturn" == e.TextContent);
+
+            Assert.Contains((LogLevel.Debug, "EndInvokeJSFailed"), logEvents);
+
+            Assert.DoesNotContain(logEvents, m => m.logLevel > LogLevel.Information);
+
+            await ValidateClientKeepsWorking(Client, batches);
+        }
+
+        [Fact]
+        public async Task MalformedJSInteropCallbackDisposesCircuit()
+        {
+            // Arrange
             var (interopCalls, dotNetCompletions, batches) = ConfigureClient();
             await GoToTestComponent(batches);
             var sink = _serverFixture.Host.Services.GetRequiredService<TestSink>();
@@ -278,11 +343,14 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             Assert.NotEqual(default, call);
 
             var id = call.id;
-            await Client.HubConnection.InvokeAsync(
-                "EndInvokeJSFromDotNet",
-                id,
-                true,
-                $"[{id}, true, }}");
+            await Client.ExpectCircuitError(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
+                    "EndInvokeJSFromDotNet",
+                    id,
+                    true,
+                    $"[{id}, true, }}");
+            });
 
             // A completely malformed payload like the one above never gets to the application.
             Assert.Single(
@@ -291,35 +359,10 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
 
             Assert.Contains((LogLevel.Debug, "EndInvokeDispatchException"), logEvents);
 
-            await Client.ClickAsync("triggerjsinterop-success");
-            await Client.HubConnection.InvokeAsync(
-                "EndInvokeJSFromDotNet",
-                id++,
-                true,
-                $"[{id}, true, null]");
-
-            Assert.Single(
-                Client.FindElementById("errormessage-success").Children.OfType<TextNode>(),
-                e => "" == e.TextContent);
-
-            Assert.Contains((LogLevel.Debug, "EndInvokeJSSucceeded"), logEvents);
-
-            await Client.ClickAsync("triggerjsinterop-failure");
-            await Client.HubConnection.InvokeAsync(
-                "EndInvokeJSFromDotNet",
-                id++,
-                false,
-                $"[{id}, false, \"There was an error invoking sendFailureCallbackReturn\"]");
-
-            Assert.Single(
-                Client.FindElementById("errormessage-failure").Children.OfType<TextNode>(),
-                e => "There was an error invoking sendFailureCallbackReturn" == e.TextContent);
-
-            Assert.Contains((LogLevel.Debug, "EndInvokeJSFailed"), logEvents);
-
-            Assert.DoesNotContain(logEvents, m => m.logLevel > LogLevel.Information);
-
-            await ValidateClientKeepsWorking(Client, batches);
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
+            });
         }
 
         [Fact]
@@ -371,7 +414,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
         }
 
         [Fact]
-        public async Task DispatchingEventsWithInvalidPayloadsDoesNotCrashTheCircuit()
+        public async Task DispatchingEventsWithInvalidPayloadsShutsDownCircuitGracefully()
         {
             // Arrange
             var (interopCalls, dotNetCompletions, batches) = ConfigureClient();
@@ -381,16 +424,23 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             sink.MessageLogged += (wc) => logEvents.Add((wc.LogLevel, wc.EventId.Name));
 
             // Act
-            await Client.HubConnection.InvokeAsync(
+            await Client.ExpectCircuitError(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
                 "DispatchBrowserEvent",
                 null,
                 null);
+            });
 
             Assert.Contains(
                 (LogLevel.Debug, "DispatchEventFailedToParseEventData"),
                 logEvents);
 
-            await ValidateClientKeepsWorking(Client, batches);
+            // Taking any other action will fail because the circuit is disposed.
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
+            });
         }
 
         [Fact]
@@ -404,16 +454,23 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             sink.MessageLogged += (wc) => logEvents.Add((wc.LogLevel, wc.EventId.Name));
 
             // Act
-            await Client.HubConnection.InvokeAsync(
+            await Client.ExpectCircuitError(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
                 "DispatchBrowserEvent",
                 "{Invalid:{\"payload}",
                 "{}");
+            });
 
             Assert.Contains(
                 (LogLevel.Debug, "DispatchEventFailedToParseEventData"),
                 logEvents);
 
-            await ValidateClientKeepsWorking(Client, batches);
+            // Taking any other action will fail because the circuit is disposed.
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
+            });
         }
 
         [Fact]
@@ -434,16 +491,23 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
                 EventArgsType = "mouse",
             };
 
-            await Client.HubConnection.InvokeAsync(
-                "DispatchBrowserEvent",
-                JsonSerializer.Serialize(browserDescriptor, TestJsonSerializerOptionsProvider.Options),
-                "{Invalid:{\"payload}");
+            await Client.ExpectCircuitError(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
+                    "DispatchBrowserEvent",
+                    JsonSerializer.Serialize(browserDescriptor, TestJsonSerializerOptionsProvider.Options),
+                    "{Invalid:{\"payload}");
+            });
 
             Assert.Contains(
                 (LogLevel.Debug, "DispatchEventFailedToParseEventData"),
                 logEvents);
 
-            await ValidateClientKeepsWorking(Client, batches);
+            // Taking any other action will fail because the circuit is disposed.
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
+            });
         }
 
         [Fact]
@@ -469,17 +533,24 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
                 EventArgsType = "mouse",
             };
 
-            await Client.HubConnection.InvokeAsync(
+            await Client.ExpectCircuitError(async () =>
+            {
+                await Client.HubConnection.InvokeAsync(
                 "DispatchBrowserEvent",
                 JsonSerializer.Serialize(browserDescriptor, TestJsonSerializerOptionsProvider.Options),
                 JsonSerializer.Serialize(mouseEventArgs, TestJsonSerializerOptionsProvider.Options));
+            });
 
             Assert.Contains(
                 logEvents,
                 e => e.eventIdName == "DispatchEventFailedToDispatchEvent" && e.logLevel == LogLevel.Debug &&
                      e.exception is ArgumentException ae && ae.Message.Contains("There is no event handler with ID 1"));
 
-            await ValidateClientKeepsWorking(Client, batches);
+            // Taking any other action will fail because the circuit is disposed.
+            await Client.ExpectCircuitErrorAndDisconnect(async () =>
+            {
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
+            });
         }
 
         [Fact]
@@ -495,7 +566,6 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             // Act
             await Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: false);
 
-
             Assert.Contains(
                 logEvents,
                 e => LogLevel.Error == e.logLevel &&
@@ -506,8 +576,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             // a circuit that's gone.
             await Client.ExpectCircuitErrorAndDisconnect(async () =>
             {
-                Assert.True(Client.Hive.TryFindElementById("event-handler-throw-sync", out var elementNode), "failed to find element");
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await elementNode.ClickAsync(Client.HubConnection));
+                await Assert.ThrowsAsync<TaskCanceledException>(() => Client.ClickAsync("event-handler-throw-sync", expectRenderBatch: true));
             });
         }
 

@@ -361,6 +361,11 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             {
                 // We don't expect any of this code to actually throw, because DotNetDispatcher.BeginInvoke doesn't throw
                 // however, we still want this to get logged if we do.
+                Log.BeginInvokeDotNetFailed(_logger, callId, assemblyName, methodIdentifier, dotNetObjectId, ex);
+                if (Client.Connected)
+                {
+                    await NotifyClientError(Client, "Interop call failed.");
+                }
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
@@ -392,8 +397,14 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             }
             catch (Exception ex)
             {
-                // An error completing JS interop is not considered fatal.
+                // An error completing JS interop means that the user sent invalid data, a well-behaved
+                // client won't do this.
                 Log.EndInvokeDispatchException(_logger, ex);
+                if (Client.Connected)
+                {
+                    await NotifyClientError(Client, "Invalid interop arguments.");
+                }
+                UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
 
@@ -414,6 +425,10 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
             {
                 // Invalid event data is fatal. We expect a well-behaved client to send valid JSON.
                 Log.DispatchEventFailedToParseEventData(_logger, ex);
+                if (Client.Connected)
+                {
+                    await NotifyClientError(Client, "Invalid event data.");
+                }
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
                 return;
             }
@@ -434,6 +449,10 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 // A failure in dispatching an event means that it was an attempt to use an invalid event id.
                 // A well-behaved client won't do this.
                 Log.DispatchEventFailedToDispatchEvent(_logger, webEventData.EventHandlerId.ToString(), ex);
+                if (Client.Connected)
+                {
+                    await NotifyClientError(Client, "Failed to dispatch event.");
+                }
                 UnhandledException?.Invoke(this, new UnhandledExceptionEventArgs(ex, isTerminating: false));
             }
         }
@@ -591,6 +610,8 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
             private static readonly Action<ILogger, string, string, string, Exception> _beginInvokeDotNetStatic;
             private static readonly Action<ILogger, string, long, string, Exception> _beginInvokeDotNetInstance;
+            private static readonly Action<ILogger, string, string, string, Exception> _beginInvokeDotNetStaticFailed;
+            private static readonly Action<ILogger, string, long, string, Exception> _beginInvokeDotNetInstanceFailed;
             private static readonly Action<ILogger, Exception> _endInvokeDispatchException;
             private static readonly Action<ILogger, long, string, Exception> _endInvokeJSFailed;
             private static readonly Action<ILogger, long, Exception> _endInvokeJSSucceeded;
@@ -619,10 +640,10 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 public static readonly EventId CircuitUnhandledExceptionFailed = new EventId(112, "CircuitUnhandledExceptionFailed");
 
                 // 200s used for interactive stuff
-                public static readonly EventId InvalidBrowserEventFormat = new EventId(200, "InvalidBrowserEventFormat");
-                public static readonly EventId DispatchEventFailedToParseEventDescriptor = new EventId(201, "DispatchEventFailedToParseEventDescriptor");
-                public static readonly EventId DispatchEventFailedToDispatchEvent = new EventId(202, "DispatchEventFailedToDispatchEvent");
-                public static readonly EventId BeginInvokeDotNet = new EventId(203, "BeginInvokeDotNet");
+                public static readonly EventId DispatchEventFailedToParseEventData = new EventId(200, "DispatchEventFailedToParseEventData");
+                public static readonly EventId DispatchEventFailedToDispatchEvent = new EventId(201, "DispatchEventFailedToDispatchEvent");
+                public static readonly EventId BeginInvokeDotNet = new EventId(202, "BeginInvokeDotNet");
+                public static readonly EventId BeginInvokeDotNetFailed = new EventId(203, "BeginInvokeDotNetFailed");
                 public static readonly EventId EndInvokeDispatchException = new EventId(204, "EndInvokeDispatchException");
                 public static readonly EventId EndInvokeJSFailed = new EventId(205, "EndInvokeJSFailed");
                 public static readonly EventId EndInvokeJSSucceeded = new EventId(206, "EndInvokeJSSucceeded");
@@ -630,7 +651,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 public static readonly EventId LocationChange = new EventId(208, "LocationChange");
                 public static readonly EventId LocationChangeSucceded = new EventId(209, "LocationChangeSucceeded");
                 public static readonly EventId LocationChangeFailed = new EventId(210, "LocationChangeFailed");
-                public static readonly EventId LocationChangeFailedInCircuit = new EventId(210, "LocationChangeFailedInCircuit");
+                public static readonly EventId LocationChangeFailedInCircuit = new EventId(211, "LocationChangeFailedInCircuit");
             }
 
             static Log()
@@ -710,6 +731,16 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                     EventIds.BeginInvokeDotNet,
                     "Invoking instance method '{MethodIdentifier}' on instance '{DotNetObjectId}' with callback id '{CallId}'");
 
+                _beginInvokeDotNetStaticFailed = LoggerMessage.Define<string, string, string>(
+                    LogLevel.Debug,
+                    EventIds.BeginInvokeDotNetFailed,
+                    "Failed to invoke static method with identifier '{MethodIdentifier}' on assembly '{Assembly}' with callback id '{CallId}'");
+
+                _beginInvokeDotNetInstanceFailed = LoggerMessage.Define<string, long, string>(
+                    LogLevel.Debug,
+                    EventIds.BeginInvokeDotNetFailed,
+                    "Failed to invoke instance method '{MethodIdentifier}' on instance '{DotNetObjectId}' with callback id '{CallId}'");
+
                 _endInvokeDispatchException = LoggerMessage.Define(
                     LogLevel.Debug,
                     EventIds.EndInvokeDispatchException,
@@ -727,7 +758,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
                 _dispatchEventFailedToParseEventData = LoggerMessage.Define(
                     LogLevel.Debug,
-                    EventIds.DispatchEventFailedToParseEventDescriptor,
+                    EventIds.DispatchEventFailedToParseEventData,
                     "Failed to parse the event data when trying to dispatch an event.");
 
                 _dispatchEventFailedToDispatchEvent = LoggerMessage.Define<string>(
@@ -794,6 +825,18 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
                 else
                 {
                     _beginInvokeDotNetInstance(logger, methodIdentifier, dotNetObjectId, callId, null);
+                }
+            }
+
+            public static void BeginInvokeDotNetFailed(ILogger logger, string callId, string assemblyName, string methodIdentifier, long dotNetObjectId, Exception exception)
+            {
+                if (assemblyName != null)
+                {
+                    _beginInvokeDotNetStaticFailed(logger, methodIdentifier, assemblyName, callId, null);
+                }
+                else
+                {
+                    _beginInvokeDotNetInstanceFailed(logger, methodIdentifier, dotNetObjectId, callId, null);
                 }
             }
 
