@@ -2088,6 +2088,86 @@ namespace Microsoft.AspNetCore.Components.Test
         }
 
         [Fact]
+        public void RenderBatch_DoesNotDisposeComponentMultipleTimes()
+        {
+            // Arrange
+            var renderer = new TestRenderer { ShouldHandleExceptions = true };
+            var exception1 = new Exception();
+            var exception2 = new Exception();
+
+            var count1 = 0;
+            var count2 = 0;
+            var count3 = 0;
+            var count4 = 0;
+            var count5 = 0;
+
+            var firstRender = true;
+            var component = new TestComponent(builder =>
+            {
+                if (firstRender)
+                {
+                    builder.AddContent(0, "Hello");
+                    builder.OpenComponent<DisposableComponent>(1);
+                    builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => { count1++; }));
+                    builder.CloseComponent();
+
+                    builder.OpenComponent<DisposableComponent>(2);
+                    builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => { count2++; throw exception1; }));
+                    builder.CloseComponent();
+
+                    builder.OpenComponent<DisposableComponent>(3);
+                    builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => { count3++; }));
+                    builder.CloseComponent();
+                }
+
+                builder.OpenComponent<DisposableComponent>(4);
+                builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => { count4++; throw exception2; }));
+                builder.CloseComponent();
+
+                builder.OpenComponent<DisposableComponent>(5);
+                builder.AddAttribute(1, nameof(DisposableComponent.DisposeAction), (Action)(() => { count5++; }));
+                builder.CloseComponent();
+            });
+            var componentId = renderer.AssignRootComponentId(component);
+            component.TriggerRender();
+
+            // Act: Second render
+            firstRender = false;
+            component.TriggerRender();
+
+            // Assert: Applicable children are included in disposal list
+            Assert.Equal(2, renderer.Batches.Count);
+            Assert.Equal(new[] { 1, 2, 3 }, renderer.Batches[1].DisposedComponentIDs);
+
+            // Components "disposed" in the batch were all disposed, components that are still live were not disposed
+            Assert.Equal(1, count1);
+            Assert.Equal(1, count2);
+            Assert.Equal(1, count3);
+            Assert.Equal(0, count4);
+            Assert.Equal(0, count5);
+
+            // Outer component is still alive and not disposed.
+            Assert.False(component.Disposed);
+            var ex = Assert.IsType<Exception>(Assert.Single(renderer.HandledExceptions));
+            Assert.Same(exception1, ex);
+
+            // Act: Dispose renderer
+            renderer.Dispose();
+
+            Assert.Equal(2, renderer.HandledExceptions.Count);
+            ex = renderer.HandledExceptions[1];
+            Assert.Same(exception2, ex);
+
+            // Assert: Everything was disposed once.
+            Assert.Equal(1, count1);
+            Assert.Equal(1, count2);
+            Assert.Equal(1, count3);
+            Assert.Equal(1, count4);
+            Assert.Equal(1, count5);
+            Assert.True(component.Disposed);
+        }
+
+        [Fact]
         public async Task DisposesEventHandlersWhenAttributeValueChanged()
         {
             // Arrange
