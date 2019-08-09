@@ -88,12 +88,13 @@ namespace Microsoft.AspNetCore.Components.Server
 
         public async ValueTask<string> StartCircuit(string baseUri, string uri)
         {
-            if (CircuitHost != null)
+            var circuitHost = CircuitHost;
+            if (circuitHost != null)
             {
                 // This is an error condition and an attempt to bind multiple circuits to a single connection.
                 // We can reject this and terminate the connection.
-                Log.CircuitAlreadyInitialized(_logger, CircuitHost.CircuitId);
-                await NotifyClientError(Clients.Caller, $"The circuit host '{CircuitHost.CircuitId}' has already been initialized.");
+                Log.CircuitAlreadyInitialized(_logger, circuitHost.CircuitId);
+                await NotifyClientError(Clients.Caller, $"The circuit host '{circuitHost.CircuitId}' has already been initialized.");
                 Context.Abort();
                 return null;
             }
@@ -125,7 +126,7 @@ namespace Microsoft.AspNetCore.Components.Server
             try
             {
                 var circuitClient = new CircuitClientProxy(Clients.Caller, Context.ConnectionId);
-                var circuitHost = _circuitFactory.CreateCircuitHost(
+                circuitHost = _circuitFactory.CreateCircuitHost(
                     Context.GetHttpContext(),
                     circuitClient,
                     baseUri,
@@ -214,7 +215,7 @@ namespace Microsoft.AspNetCore.Components.Server
             }
 
             Log.ReceivedConfirmationForBatch(_logger, renderId);
-            _ = CircuitHost.Renderer.OnRenderCompleted(renderId, errorMessageOrNull);
+            _ = circuitHost.Renderer.OnRenderCompleted(renderId, errorMessageOrNull);
         }
 
         public async ValueTask OnLocationChanged(string uri, bool intercepted)
