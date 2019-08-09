@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Ignitor;
@@ -305,9 +306,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             // Act
             await Client.ExpectCircuitError(async () =>
             {
-                // We want to click the element, but don't expect a DOM update.
-                Assert.True(Client.Hive.TryFindElementById(id, out var elementNode), "failed to find element");
-                await elementNode.ClickAsync(Client.HubConnection);
+                await Client.ClickAsync(id, expectRenderBatch: false);
             });
 
             Assert.Contains(
@@ -318,8 +317,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.ServerExecutionTests
             // a circuit that's gone.
             await Client.ExpectCircuitErrorAndDisconnect(async () =>
             {
-                Assert.True(Client.Hive.TryFindElementById(id, out var elementNode), "failed to find element");
-                await Assert.ThrowsAsync<TaskCanceledException>(async () => await elementNode.ClickAsync(Client.HubConnection));
+                await Assert.ThrowsAsync<TaskCanceledException>(async () => await Client.ClickAsync(id, expectRenderBatch: false));
             });
         }
 

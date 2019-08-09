@@ -6,9 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.Routing;
-using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.Web.Rendering;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,9 +20,9 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILoggerFactory _loggerFactory;
-        private readonly ILogger _logger;
         private readonly CircuitIdFactory _circuitIdFactory;
         private readonly CircuitOptions _options;
+        private readonly ILogger _logger;
 
         public DefaultCircuitFactory(
             IServiceScopeFactory scopeFactory,
@@ -34,9 +32,10 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         {
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-            _options = options ?? throw new ArgumentNullException(nameof(options));
             _circuitIdFactory = circuitIdFactory ?? throw new ArgumentNullException(nameof(circuitIdFactory));
-            _options = options.Value;
+            _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+
+            _logger = _loggerFactory.CreateLogger<DefaultCircuitFactory>();
         }
 
         public override CircuitHost CreateCircuitHost(

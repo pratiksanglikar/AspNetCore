@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Components.Web.Rendering;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.JSInterop;
 
 namespace Microsoft.AspNetCore.Components.Server.Circuits
@@ -20,7 +19,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
     {
         private readonly SemaphoreSlim HandlerLock = new SemaphoreSlim(1);
         private readonly IServiceScope _scope;
-        private readonly IOptions<CircuitOptions> _options;
+        private readonly CircuitOptions _options;
         private readonly CircuitHandler[] _circuitHandlers;
         private readonly ILogger _logger;
         private bool _initialized;
@@ -57,7 +56,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
         public CircuitHost(
             string circuitId,
             IServiceScope scope,
-            IOptions<CircuitOptions> options,
+            CircuitOptions options,
             CircuitClientProxy client,
             RemoteRenderer renderer,
             IReadOnlyList<ComponentDescriptor> descriptors,
@@ -554,7 +553,7 @@ namespace Microsoft.AspNetCore.Components.Server.Circuits
 
             try
             {
-                if (_options.Value.DetailedErrors)
+                if (_options.DetailedErrors)
                 {
                     await NotifyClientError(Client, exception.ToString());
                 }
