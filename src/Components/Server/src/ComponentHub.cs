@@ -115,7 +115,7 @@ namespace Microsoft.AspNetCore.Components.Server
             }
 
             // From this point, we can try to actually initialize the circuit.
-            if (DefaultCircuitFactory.ResolveComponentMetadata(Context.GetHttpContext() ).Count == 0)
+            if (DefaultCircuitFactory.ResolveComponentMetadata(Context.GetHttpContext()).Count == 0)
             {
                 // No components preregistered so return. This is totally normal if the components were prerendered.
                 Log.NoComponentsRegisteredInEndpoint(_logger, Context.GetHttpContext().GetEndpoint()?.DisplayName);
@@ -180,7 +180,7 @@ namespace Microsoft.AspNetCore.Components.Server
                 return;
             }
 
-            _ = CircuitHost.BeginInvokeDotNetFromJS(callId, assemblyName, methodIdentifier, dotNetObjectId, argsJson);
+             _ = circuitHost.BeginInvokeDotNetFromJS(callId, assemblyName, methodIdentifier, dotNetObjectId, argsJson);
         }
 
         public async ValueTask EndInvokeJSFromDotNet(long asyncHandle, bool succeeded, string arguments)
@@ -191,7 +191,7 @@ namespace Microsoft.AspNetCore.Components.Server
                 return;
             }
 
-            _ = CircuitHost.EndInvokeJSFromDotNet(asyncHandle, succeeded, arguments);
+             _ = circuitHost.EndInvokeJSFromDotNet(asyncHandle, succeeded, arguments);
         }
 
         public async ValueTask DispatchBrowserEvent(string eventDescriptor, string eventArgs)
@@ -202,7 +202,7 @@ namespace Microsoft.AspNetCore.Components.Server
                 return;
             }
 
-            _ = CircuitHost.DispatchEvent(eventDescriptor, eventArgs);
+             _ = circuitHost.DispatchEvent(eventDescriptor, eventArgs);
         }
 
         public async ValueTask OnRenderCompleted(long renderId, string errorMessageOrNull)
@@ -225,7 +225,7 @@ namespace Microsoft.AspNetCore.Components.Server
                 return;
             }
 
-            _ = CircuitHost.OnLocationChangedAsync(uri, intercepted);
+             _ = circuitHost.OnLocationChangedAsync(uri, intercepted);
         }
 
         private async ValueTask<CircuitHost> GetActiveCircuitAsync([CallerMemberName] string callSite = "")
